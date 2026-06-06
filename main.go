@@ -10,9 +10,10 @@ import (
 	"net/url"
 
 	apidiscoveryv2 "k8s.io/api/apidiscovery/v2"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	undashhttp "github.com/xdavidwu/undash/internal/http"
 )
 
 const (
@@ -37,48 +38,8 @@ var (
 	}
 )
 
-type jsonHandler[T any] func(w http.ResponseWriter, r *http.Request) (T, error)
-
-func (j jsonHandler[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	headers := w.Header()
-
-	res, err := j(w, r)
-	if err != nil {
-		var errRes metav1.Status
-
-		if apiStatus, ok := err.(apierrors.APIStatus); ok {
-			errRes = apiStatus.Status()
-		} else {
-			errRes = metav1.Status{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "v1",
-					Kind:       "Status",
-				},
-				Status:  metav1.StatusFailure,
-				Message: err.Error(),
-			}
-		}
-		headers.Set("Content-Type", runtime.ContentTypeJSON)
-
-		if errRes.Code != 0 {
-			w.WriteHeader(int(errRes.Code))
-		} else {
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-		encoder := json.NewEncoder(w)
-		encoder.Encode(errRes)
-	}
-
-	if headers.Get("Content-Type") == "" {
-		headers.Set("Content-Type", runtime.ContentTypeJSON)
-	}
-
-	encoder := json.NewEncoder(w)
-	encoder.Encode(res)
-}
-
 func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
-	return jsonHandler[*metav1.List](func(w http.ResponseWriter, r *http.Request) (*metav1.List, error) {
+	return undashhttp.JSONHandler[*metav1.List](func(w http.ResponseWriter, r *http.Request) (*metav1.List, error) {
 		ns := r.PathValue("namespace")
 		kind := coreNamespacedResources[resource]
 
@@ -132,7 +93,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle(
 		"/api",
-		jsonHandler[*apidiscoveryv2.APIGroupDiscoveryList](func(w http.ResponseWriter, r *http.Request) (*apidiscoveryv2.APIGroupDiscoveryList, error) {
+		undashhttp.JSONHandler[*apidiscoveryv2.APIGroupDiscoveryList](func(w http.ResponseWriter, r *http.Request) (*apidiscoveryv2.APIGroupDiscoveryList, error) {
 			// XXX supporting apidiscoveryv2 (1.30+) since it's easier
 			// but dashboard targets 1.25
 			discoveries := []apidiscoveryv2.APIResourceDiscovery{}
@@ -171,7 +132,7 @@ func main() {
 	)
 	mux.Handle(
 		"/apis",
-		jsonHandler[*apidiscoveryv2.APIGroupDiscoveryList](func(w http.ResponseWriter, r *http.Request) (*apidiscoveryv2.APIGroupDiscoveryList, error) {
+		undashhttp.JSONHandler[*apidiscoveryv2.APIGroupDiscoveryList](func(w http.ResponseWriter, r *http.Request) (*apidiscoveryv2.APIGroupDiscoveryList, error) {
 			// XXX supporting apidiscoveryv2 (1.30+) since it's easier
 			// but dashboard targets 1.25
 			list := &apidiscoveryv2.APIGroupDiscoveryList{
