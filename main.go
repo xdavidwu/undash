@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -176,5 +177,5 @@ func main() {
 	}
 
 	l, _ := net.Listen("tcp", "localhost:9091")
-	http.Serve(l, mux)
+	http.Serve(l, undashhttp.InjectLogger(undashhttp.AccessLog(mux), slog.Default()))
 }
