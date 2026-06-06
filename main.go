@@ -43,8 +43,15 @@ func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
 	return undashhttp.JSONHandler[*metav1.List](func(w http.ResponseWriter, r *http.Request) (*metav1.List, error) {
 		ns := r.PathValue("namespace")
 		kind := coreNamespacedResources[resource]
+		client := undashhttp.NewClient(&http.Client{Transport: undashhttp.RequestLog(http.DefaultTransport)})
+		ctx := r.Context()
 
-		listRes, err := http.Get(fmt.Sprintf("%s/api/v1/%s/%s", upstream, kind.singular, ns))
+		listRes, err := client.Call(
+			ctx,
+			http.MethodGet,
+			fmt.Sprintf("%s/api/v1/%s/%s", upstream, kind.singular, ns),
+			nil,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("cannot list objects: %w", err)
 		}
@@ -72,7 +79,12 @@ func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
 		for _, obj := range listObj[resource] {
 			name := obj.ObjectMeta.Name
 
-			realObjRes, err := http.Get(fmt.Sprintf("%s/api/v1/_raw/%s/namespace/%s/name/%s", upstream, kind.singular, ns, name))
+			realObjRes, err := client.Call(
+				ctx,
+				http.MethodGet,
+				fmt.Sprintf("%s/api/v1/_raw/%s/namespace/%s/name/%s", upstream, kind.singular, ns, name),
+				nil,
+			)
 			if err != nil {
 				return nil, fmt.Errorf("cannot get real object: %w", err)
 			}
