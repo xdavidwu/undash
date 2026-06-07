@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	undashcontext "github.com/xdavidwu/undash/internal/context"
@@ -22,29 +20,8 @@ func (j JSONHandler[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	res, err := j(w, r)
 	if err != nil {
-		var errRes metav1.Status
-
-		if apiStatus, ok := err.(apierrors.APIStatus); ok {
-			errRes = apiStatus.Status()
-		} else {
-			errRes = metav1.Status{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "v1",
-					Kind:       "Status",
-				},
-				Status:  metav1.StatusFailure,
-				Message: err.Error(),
-			}
-		}
-		headers.Set("Content-Type", runtime.ContentTypeJSON)
-
-		if errRes.Code != 0 {
-			w.WriteHeader(int(errRes.Code))
-		} else {
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-		encoder := json.NewEncoder(w)
-		encoder.Encode(errRes)
+		WriteErrorAsMetaV1Status(w, err)
+		return
 	}
 
 	if headers.Get("Content-Type") == "" {
