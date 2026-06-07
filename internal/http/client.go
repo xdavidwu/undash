@@ -51,6 +51,9 @@ type RawClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
+// Error type for status code check from [CheckStatusCode].
+// [Response] is passed as-is without reading body, until [StatusCodeError.Error],
+// which drains the body into unexported fields.
 type StatusCodeError struct {
 	*http.Response
 	body    []byte
@@ -60,6 +63,7 @@ type StatusCodeError struct {
 func (s *StatusCodeError) Error() string {
 	if s.body == nil && s.bodyErr == nil {
 		s.body, s.bodyErr = io.ReadAll(s.Response.Body)
+		s.Response.Body.Close()
 	}
 
 	if s.bodyErr != nil {
