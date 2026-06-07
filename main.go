@@ -14,6 +14,7 @@ import (
 
 	apidiscoveryv2 "k8s.io/api/apidiscovery/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/xdavidwu/undash/internal/dashboard"
@@ -43,7 +44,7 @@ var (
 )
 
 func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
-	return undashhttp.JSONHandler[*metav1.List](func(w http.ResponseWriter, r *http.Request) (*metav1.List, error) {
+	return undashhttp.JSONHandler[*unstructured.UnstructuredList](func(w http.ResponseWriter, r *http.Request) (*unstructured.UnstructuredList, error) {
 		ns := r.PathValue("namespace")
 		kind := coreNamespacedResources[resource]
 		client := undashhttp.NewDefaultClient()
@@ -70,13 +71,9 @@ func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
 			return nil, fmt.Errorf("cannot unmarshal object list: %w", err)
 		}
 
-		res := &metav1.List{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: "v1",
-				Kind:       kind.listKind,
-			},
-			Items: []runtime.RawExtension{},
-		}
+		res := &unstructured.UnstructuredList{}
+		res.SetAPIVersion("v1")
+		res.SetKind(kind.listKind)
 		for _, obj := range listObj.ObjectMetas {
 			realObjRes, err := client.Call(
 				ctx,
@@ -89,12 +86,17 @@ func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
 			}
 			defer realObjRes.Body.Close()
 
-			realObj, err := io.ReadAll(realObjRes.Body)
+			realObjBytes, err := io.ReadAll(realObjRes.Body)
 			if err != nil {
 				return nil, fmt.Errorf("cannot read real object: %w", err)
 			}
 
-			res.Items = append(res.Items, runtime.RawExtension{Raw: realObj})
+			obj, _, err := unstructured.UnstructuredJSONScheme.Decode(realObjBytes, nil, &unstructured.Unstructured{})
+			if err != nil {
+				return nil, fmt.Errorf("cannot decode real object: %w", err)
+			}
+
+			res.Items = append(res.Items, *obj.(*unstructured.Unstructured))
 		}
 
 		return res, nil
