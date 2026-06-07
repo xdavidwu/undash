@@ -9,13 +9,45 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// TODO StatusReason
+
+var (
+	statusReasonFromCode = map[int]metav1.StatusReason{
+		http.StatusUnauthorized: metav1.StatusReasonUnauthorized,
+		http.StatusForbidden:    metav1.StatusReasonForbidden,
+		http.StatusNotFound:     metav1.StatusReasonNotFound,
+		http.StatusConflict:     metav1.StatusReasonConflict,
+		http.StatusGone:         metav1.StatusReasonGone,
+		// metav1.StatusReasonInvalid is more specific than http.StatusUnprocessableEntity
+		// metav1.StatusReasonTimeout is more specific than http.StatusGatewayTimeout
+		http.StatusTooManyRequests: metav1.StatusReasonTooManyRequests,
+		// metav1.StatusReasonBadRequest is more specific than http.StatusBadRequest
+		http.StatusMethodNotAllowed:      metav1.StatusReasonMethodNotAllowed,
+		http.StatusNotAcceptable:         metav1.StatusReasonNotAcceptable,
+		http.StatusRequestEntityTooLarge: metav1.StatusReasonRequestEntityTooLarge,
+		http.StatusUnsupportedMediaType:  metav1.StatusReasonUnsupportedMediaType,
+		http.StatusInternalServerError:   metav1.StatusReasonInternalError,
+		http.StatusServiceUnavailable:    metav1.StatusReasonServiceUnavailable,
+	}
+)
+
 func MetaV1Status(code int, message string) metav1.Status {
+	reason, ok := statusReasonFromCode[code]
+	if !ok {
+		if code >= 500 {
+			reason = metav1.StatusReasonInternalError
+		} else {
+			reason = metav1.StatusReasonUnknown
+		}
+	}
+
 	return metav1.Status{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
 			Kind:       "Status",
 		},
 		Status:  metav1.StatusFailure,
+		Reason:  reason,
 		Message: message,
 		Code:    int32(code),
 	}
