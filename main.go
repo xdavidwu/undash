@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 
 	apidiscoveryv2 "k8s.io/api/apidiscovery/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -103,6 +105,9 @@ func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
 }
 
 func main() {
+	logger := slog.Default()
+	ctx := context.Background()
+
 	mux := http.NewServeMux()
 	mux.Handle(
 		"/api",
@@ -190,6 +195,15 @@ func main() {
 		)
 	}
 
-	l, _ := net.Listen("tcp", "localhost:9091")
-	http.Serve(l, undashhttp.InjectLogger(undashhttp.AccessLog(mux), slog.Default()))
+	l, err := net.Listen("tcp", "localhost:9091")
+	if err != nil {
+		logger.ErrorContext(ctx, "cannot listen", "error", err)
+		os.Exit(1)
+	}
+	logger.InfoContext(ctx, "listening", "addr", l.Addr())
+
+	if err := http.Serve(l, undashhttp.InjectLogger(undashhttp.AccessLog(mux), logger)); err != nil {
+		logger.ErrorContext(ctx, "cannot serve http", "error", err)
+		os.Exit(1)
+	}
 }
