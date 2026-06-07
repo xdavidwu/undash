@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	"github.com/xdavidwu/undash/internal/dashboard"
 	undashhttp "github.com/xdavidwu/undash/internal/http"
 )
 
@@ -64,12 +65,10 @@ func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
 			return nil, fmt.Errorf("cannot read object list: %w", err)
 		}
 
-		listObj := map[string][]struct {
-			ObjectMeta struct {
-				Name string `json:"name"`
-			} `json:"objectMeta"`
-		}{}
-		json.Unmarshal(body, &listObj)
+		listObj := dashboard.ListUnmarshaler{Resource: resource}
+		if err := json.Unmarshal(body, &listObj); err != nil {
+			return nil, fmt.Errorf("cannot unmarshal object list: %w", err)
+		}
 
 		res := &metav1.List{
 			TypeMeta: metav1.TypeMeta{
@@ -78,13 +77,11 @@ func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
 			},
 			Items: []runtime.RawExtension{},
 		}
-		for _, obj := range listObj[resource] {
-			name := obj.ObjectMeta.Name
-
+		for _, obj := range listObj.ObjectMetas {
 			realObjRes, err := client.Call(
 				ctx,
 				http.MethodGet,
-				fmt.Sprintf("%s/api/v1/_raw/%s/namespace/%s/name/%s", upstream, kind.singular, ns, name),
+				fmt.Sprintf("%s/api/v1/_raw/%s/namespace/%s/name/%s", upstream, kind.singular, ns, obj.Name),
 				nil,
 			)
 			if err != nil {
