@@ -43,7 +43,7 @@ func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
 	return undashhttp.JSONHandler[*metav1.List](func(w http.ResponseWriter, r *http.Request) (*metav1.List, error) {
 		ns := r.PathValue("namespace")
 		kind := coreNamespacedResources[resource]
-		client := undashhttp.NewClient(&http.Client{Transport: undashhttp.RequestLog(http.DefaultTransport)})
+		client := undashhttp.NewDefaultClient()
 		ctx := r.Context()
 
 		listRes, err := client.Call(

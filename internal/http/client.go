@@ -51,12 +51,57 @@ type RawClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
+type StatusCodeError struct {
+	*http.Response
+	body    []byte
+	bodyErr error
+}
+
+func (s *StatusCodeError) Error() string {
+	if s.body == nil && s.bodyErr == nil {
+		s.body, s.bodyErr = io.ReadAll(s.Response.Body)
+	}
+
+	if s.bodyErr != nil {
+		return fmt.Sprintf("server returned status %d, cannot read response: %s", s.Response.StatusCode, s.bodyErr)
+	}
+
+	return fmt.Sprintf("server returned status %d: %s", s.Response.StatusCode, string(s.body))
+}
+
+type checkStatusCodeRawClient struct {
+	RawClient
+}
+
+func (c *checkStatusCodeRawClient) Do(req *http.Request) (*http.Response, error) {
+	r, err := c.RawClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if r.StatusCode >= 400 {
+		return nil, &StatusCodeError{Response: r}
+	}
+
+	return r, nil
+}
+
+func CheckStatusCode(c RawClient) RawClient {
+	return &checkStatusCodeRawClient{c}
+}
+
 type Client struct {
 	raw RawClient
 }
 
 func NewClient(raw RawClient) *Client {
 	return &Client{raw: raw}
+}
+
+func NewDefaultClient() *Client {
+	return NewClient(CheckStatusCode(&http.Client{
+		Transport: RequestLog(http.DefaultTransport),
+	}))
 }
 
 func (c *Client) Raw() RawClient {
