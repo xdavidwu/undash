@@ -170,7 +170,7 @@ func main() {
 		mux.Handle(
 			"/api/v1/namespaces/{namespace}/"+resource+"/{name}",
 			&httputil.ReverseProxy{
-				Transport: undashhttp.RequestLog(http.DefaultTransport),
+				Transport: undashhttp.NoExplicitCompression(undashhttp.RequestLog(http.DefaultTransport)),
 				Rewrite: func(r *httputil.ProxyRequest) {
 					url, err := url.Parse(fmt.Sprintf(
 						"%s/api/v1/_raw/%s/namespace/%s/name/%s",
@@ -185,6 +185,7 @@ func main() {
 
 					r.Out.URL = url
 				},
+				ModifyResponse: undashhttp.ErrorResponseAsMetaV1Status,
 			},
 		)
 	}

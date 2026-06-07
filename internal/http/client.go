@@ -47,6 +47,24 @@ func RequestLog(r http.RoundTripper) http.RoundTripper {
 	return &loggingRoundTripper{r}
 }
 
+type noExplicitCompressionRoundTripper struct {
+	http.RoundTripper
+}
+
+func (n *noExplicitCompressionRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	r.Header.Del("Accept-Encoding")
+	return n.RoundTripper.RoundTrip(r)
+}
+
+// Wrap [r] to remove explicit Accept-Encoding header.
+// Compression may still happens on lower-level [http.RoundTripper]
+// (e.g. transparent compression provided by [http.Transport],)
+// but [http.Response.Body] should never be compressed after this.
+// Useful for [httputils.ReverseProxy] if modifying body with [httputils.ReverseProxy.ModifyResponse] is desired.
+func NoExplicitCompression(r http.RoundTripper) http.RoundTripper {
+	return &noExplicitCompressionRoundTripper{r}
+}
+
 type RawClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
