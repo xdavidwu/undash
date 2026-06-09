@@ -19,6 +19,7 @@ import (
 
 	"github.com/xdavidwu/undash/internal/dashboard"
 	undashhttp "github.com/xdavidwu/undash/internal/http"
+	"github.com/xdavidwu/undash/internal/kubernetes"
 )
 
 const (
@@ -28,23 +29,25 @@ const (
 )
 
 type kindMeta struct {
-	kind     string
-	singular string
-	listKind string
+	kind        string
+	singular    string
+	listKind    string
+	listToTable func(*unstructured.UnstructuredList) (*metav1.Table, error)
 }
 
 var (
 	coreNamespacedResources = map[string]kindMeta{
 		"services": {
-			kind:     "Service",
-			singular: "service",
-			listKind: "ServiceList",
+			kind:        "Service",
+			singular:    "service",
+			listKind:    "ServiceList",
+			listToTable: kubernetes.UnstructuredListToTableFunc(kubernetes.V1ServiceListToTable),
 		},
 	}
 )
 
 func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
-	return undashhttp.JSONHandler(func(w http.ResponseWriter, r *http.Request) (*unstructured.UnstructuredList, error) {
+	return undashhttp.JSONHandler(func(w http.ResponseWriter, r *http.Request) (runtime.Object, error) {
 		ns := r.PathValue("namespace")
 		kind := coreNamespacedResources[resource]
 		client := undashhttp.NewDefaultClient()
@@ -97,6 +100,16 @@ func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
 			}
 
 			res.Items = append(res.Items, *obj.(*unstructured.Unstructured))
+		}
+
+		if undashhttp.AcceptsExactMediaType(r, undashhttp.MetaV1TableJSON) && kind.listToTable != nil {
+			table, err := kind.listToTable(res)
+			if err != nil {
+				return nil, fmt.Errorf("cannot convert list to table: %w", err)
+			}
+
+			w.Header().Set("Content-Type", undashhttp.MetaV1TableJSON.String())
+			return table, nil
 		}
 
 		return res, nil
