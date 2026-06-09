@@ -44,7 +44,7 @@ var (
 )
 
 func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
-	return undashhttp.JSONHandler[*unstructured.UnstructuredList](func(w http.ResponseWriter, r *http.Request) (*unstructured.UnstructuredList, error) {
+	return undashhttp.JSONHandler(func(w http.ResponseWriter, r *http.Request) (*unstructured.UnstructuredList, error) {
 		ns := r.PathValue("namespace")
 		kind := coreNamespacedResources[resource]
 		client := undashhttp.NewDefaultClient()
@@ -110,7 +110,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle(
 		"/api",
-		undashhttp.JSONHandler[*apidiscoveryv2.APIGroupDiscoveryList](func(w http.ResponseWriter, r *http.Request) (*apidiscoveryv2.APIGroupDiscoveryList, error) {
+		undashhttp.JSONHandler(func(w http.ResponseWriter, r *http.Request) (*apidiscoveryv2.APIGroupDiscoveryList, error) {
 			// XXX supporting apidiscoveryv2 (1.30+) since it's easier
 			// but dashboard targets 1.25
 			discoveries := []apidiscoveryv2.APIResourceDiscovery{}
@@ -149,7 +149,7 @@ func main() {
 	)
 	mux.Handle(
 		"/apis",
-		undashhttp.JSONHandler[*apidiscoveryv2.APIGroupDiscoveryList](func(w http.ResponseWriter, r *http.Request) (*apidiscoveryv2.APIGroupDiscoveryList, error) {
+		undashhttp.JSONHandler(func(w http.ResponseWriter, r *http.Request) (*apidiscoveryv2.APIGroupDiscoveryList, error) {
 			// XXX supporting apidiscoveryv2 (1.30+) since it's easier
 			// but dashboard targets 1.25
 			list := &apidiscoveryv2.APIGroupDiscoveryList{

@@ -13,9 +13,9 @@ import (
 	undashcontext "github.com/xdavidwu/undash/internal/context"
 )
 
-type JSONHandler[T any] func(w http.ResponseWriter, r *http.Request) (T, error)
+type jsonHandler[T any] func(w http.ResponseWriter, r *http.Request) (T, error)
 
-func (j JSONHandler[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (j jsonHandler[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	headers := w.Header()
 
 	res, err := j(w, r)
@@ -30,6 +30,10 @@ func (j JSONHandler[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	encoder := json.NewEncoder(w)
 	encoder.Encode(res)
+}
+
+func JSONHandler[T any](fn func(w http.ResponseWriter, r *http.Request) (T, error)) http.Handler {
+	return jsonHandler[T](fn)
 }
 
 func InjectLogger(h http.Handler, base *slog.Logger) http.Handler {
