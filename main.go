@@ -29,19 +29,21 @@ const (
 )
 
 type kindMeta struct {
-	kind        string
-	singular    string
-	listKind    string
-	listToTable func(*unstructured.UnstructuredList) (*metav1.Table, error)
+	kind               string
+	singular           string
+	listKind           string
+	asTableIfRequested func(*http.Response) error
+	listToTable        func(*unstructured.UnstructuredList) (*metav1.Table, error)
 }
 
 var (
 	coreNamespacedResources = map[string]kindMeta{
 		"services": {
-			kind:        "Service",
-			singular:    "service",
-			listKind:    "ServiceList",
-			listToTable: kubernetes.UnstructuredListToTableFunc(kubernetes.V1ServiceListToTable),
+			kind:               "Service",
+			singular:           "service",
+			listKind:           "ServiceList",
+			asTableIfRequested: undashhttp.RewriteAsTableIfRequested(kubernetes.V1ServiceToTable),
+			listToTable:        kubernetes.UnstructuredListToTableFunc(kubernetes.V1ServiceListToTable),
 		},
 	}
 )
@@ -202,7 +204,10 @@ func main() {
 
 					r.Out.URL = url
 				},
-				ModifyResponse: undashhttp.ErrorResponseAsMetaV1Status,
+				ModifyResponse: undashhttp.ChainModifyResponse(
+					undashhttp.ErrorResponseAsMetaV1Status,
+					kind.asTableIfRequested,
+				),
 			},
 		)
 	}

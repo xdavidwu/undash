@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -72,4 +73,39 @@ func WriteErrorAsMetaV1Status(w http.ResponseWriter, err error) {
 	}
 	encoder := json.NewEncoder(w)
 	encoder.Encode(status)
+}
+
+func RewriteAsTableIfRequested[
+	TypeStruct any,
+	Type interface {
+		*TypeStruct
+		runtime.Object
+	},
+](
+	toTable func(Type) (*metav1.Table, error),
+) func(*http.Response) error {
+	return func(r *http.Response) error {
+		if r.StatusCode != http.StatusOK {
+			return nil
+		}
+		if !AcceptsExactMediaType(r.Request, MetaV1TableJSON) {
+			return nil
+		}
+
+		origBody := r.Body
+		defer origBody.Close()
+
+		var obj Type = new(TypeStruct)
+		decoder := json.NewDecoder(origBody)
+		if err := decoder.Decode(obj); err != nil {
+			return err
+		}
+
+		table, err := toTable(obj)
+		if err != nil {
+			return fmt.Errorf("cannot convert object to table: %w", err)
+		}
+
+		return rewriteToJSON(r, table, MetaV1TableJSON.String())
+	}
 }

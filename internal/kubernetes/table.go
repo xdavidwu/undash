@@ -62,5 +62,6 @@ func ToTableFunc[
 
 var (
 	V1ServiceListToTable = ToTableFunc(apiscorev1.Convert_v1_ServiceList_To_core_ServiceList)
+	V1ServiceToTable     = ToTableFunc(apiscorev1.Convert_v1_Service_To_core_Service)
 	// TODO more, perhaps via code gen
 )
