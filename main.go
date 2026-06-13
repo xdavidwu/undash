@@ -42,8 +42,8 @@ var (
 			kind:               "Service",
 			singular:           "service",
 			listKind:           "ServiceList",
-			asTableIfRequested: undashhttp.RewriteAsTableIfRequested(kubernetes.V1ServiceToTable),
-			listToTable:        kubernetes.UnstructuredListToTableFunc(kubernetes.V1ServiceListToTable),
+			asTableIfRequested: undashhttp.RewriteAsTableIfRequested(kubernetes.CoreV1ServiceToTable),
+			listToTable:        kubernetes.UnstructuredListToTableFunc(kubernetes.CoreV1ServiceListToTable),
 		},
 	}
 )

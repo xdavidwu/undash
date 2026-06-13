@@ -7,7 +7,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/conversion"
 	"k8s.io/apimachinery/pkg/runtime"
-	apiscorev1 "k8s.io/kubernetes/pkg/apis/core/v1"
 	"k8s.io/kubernetes/pkg/printers"
 	internalprinters "k8s.io/kubernetes/pkg/printers/internalversion"
 )
@@ -59,9 +58,3 @@ func ToTableFunc[
 		return table, nil
 	}
 }
-
-var (
-	V1ServiceListToTable = ToTableFunc(apiscorev1.Convert_v1_ServiceList_To_core_ServiceList)
-	V1ServiceToTable     = ToTableFunc(apiscorev1.Convert_v1_Service_To_core_Service)
-	// TODO more, perhaps via code gen
-)
