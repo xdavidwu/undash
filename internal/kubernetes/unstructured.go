@@ -8,14 +8,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-func Structurize[T metav1.ObjectMetaAccessor](
+func Structurize[T Object](
 	o *unstructured.Unstructured, to T,
 ) error {
 	return runtime.DefaultUnstructuredConverter.FromUnstructured(
 		o.UnstructuredContent(), to)
 }
 
-func StructurizeList[T metav1.ListMetaAccessor](
+func StructurizeList[T List](
 	o *unstructured.UnstructuredList, to T,
 ) error {
 	return runtime.DefaultUnstructuredConverter.FromUnstructured(
@@ -26,7 +26,7 @@ func UnstructuredListToTableFunc[
 	ListTypeStruct any,
 	ListType interface {
 		*ListTypeStruct
-		metav1.ListMetaAccessor
+		List
 	},
 ](
 	listToTable func(ListType) (*metav1.Table, error),
