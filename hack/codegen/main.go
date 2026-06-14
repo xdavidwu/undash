@@ -163,19 +163,38 @@ var ignores = []string{
 	"Convert_v1_ReplicationController_To_core_ReplicationController",
 }
 
-func main() {
-	pkgs, err := packages.Load(&packages.Config{
-		Mode: packages.NeedName | packages.NeedTypes | packages.NeedDeps | packages.NeedImports,
-	}, pkgs...)
-	if err != nil {
-		panic(err)
+func writeAST(path string, file *ast.File) error {
+	f := &bytes.Buffer{}
+	if err := format.Node(f, token.NewFileSet(), file); err != nil {
+		return err
 	}
 
+	// XXX hack for map literal in generateUnstructuredTable
+	s := f.String()
+	s = strings.ReplaceAll(s, "{", "{\n")
+	s = strings.ReplaceAll(s, ")}", "),\n}")
+	s = strings.ReplaceAll(s, "),", "),\n")
+
+	// 2nd pass for newlines
+	b, err := format.Source([]byte(s))
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func extractInfos(pkgs []*packages.Package) ([]info, error) {
 	infos := []info{}
 	for _, pkg := range pkgs {
 		info := info{
 			pkg: pkg.PkgPath,
 		}
+
 		scope := pkg.Types.Scope()
 		for _, name := range scope.Names() {
 			obj := scope.Lookup(name)
@@ -220,6 +239,10 @@ func main() {
 		infos = append(infos, info)
 	}
 
+	return infos, nil
+}
+
+func generateTables(infos []info) error {
 	importSpecs := []ast.Spec{}
 	varDecls := []ast.Decl{}
 	for _, info := range infos {
@@ -297,19 +320,236 @@ func main() {
 	}
 	file.Decls = append(file.Decls, varDecls...)
 
-	f := &bytes.Buffer{}
-	if err := format.Node(f, token.NewFileSet(), file); err != nil {
-		panic(err)
+	return writeAST("zz_generated.table.go", file)
+}
+
+//var ListToTableFuncs = map[schema.GroupVersionKind]func(*unstructured.UnstructuredList) (*metav1.Table, error){
+//	corev1.SchemeGroupVersion.WithKind("ServiceList"): UnstructuredListToTableFunc(CoreV1ServiceListToTable),
+//}
+
+func generateUnstructuredTable(infos []info) error {
+	importSpecs := []ast.Spec{
+		&ast.ImportSpec{
+			Name: ast.NewIdent("metav1"),
+			Path: &ast.BasicLit{
+				Kind:  token.STRING,
+				Value: strconv.Quote("k8s.io/apimachinery/pkg/apis/meta/v1"),
+			},
+		},
+		&ast.ImportSpec{
+			Path: &ast.BasicLit{
+				Kind:  token.STRING,
+				Value: strconv.Quote("k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"),
+			},
+		},
+		&ast.ImportSpec{
+			Path: &ast.BasicLit{
+				Kind:  token.STRING,
+				Value: strconv.Quote("k8s.io/apimachinery/pkg/runtime/schema"),
+			},
+		},
+	}
+	listMapKVE := []ast.Expr{}
+	objectMapKVE := []ast.Expr{}
+	for _, info := range infos {
+		if len(info.listConversions) == 0 && len(info.objectConversions) == 0 {
+			continue
+		}
+
+		localImport := localImportName(info.pkg)
+		importSpecs = append(importSpecs, &ast.ImportSpec{
+			Name: ast.NewIdent(localImport),
+			Path: &ast.BasicLit{
+				Kind:  token.STRING,
+				Value: strconv.Quote(info.pkg),
+			},
+		})
+
+		for _, conv := range info.objectConversions {
+			objectMapKVE = append(objectMapKVE, &ast.KeyValueExpr{
+				Key: &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X: &ast.SelectorExpr{
+							X:   ast.NewIdent(localImport),
+							Sel: ast.NewIdent("SchemeGroupVersion"),
+						},
+						Sel: ast.NewIdent("WithKind"),
+					},
+					Args: []ast.Expr{
+						&ast.BasicLit{
+							Kind:  token.STRING,
+							Value: strconv.Quote(conv.fromPtrTo.Obj().Name()),
+						},
+					},
+				},
+				Value: &ast.CallExpr{
+					Fun: ast.NewIdent("UnstructuredToTableFunc"),
+					Args: []ast.Expr{
+						ast.NewIdent(tableConversionFnName(conv.fromPtrTo)),
+					},
+				},
+			})
+		}
+
+		for _, conv := range info.listConversions {
+			listMapKVE = append(listMapKVE, &ast.KeyValueExpr{
+				Key: &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X: &ast.SelectorExpr{
+							X:   ast.NewIdent(localImport),
+							Sel: ast.NewIdent("SchemeGroupVersion"),
+						},
+						Sel: ast.NewIdent("WithKind"),
+					},
+					Args: []ast.Expr{
+						&ast.BasicLit{
+							Kind:  token.STRING,
+							Value: strconv.Quote(conv.fromPtrTo.Obj().Name()),
+						},
+					},
+				},
+				Value: &ast.CallExpr{
+					Fun: ast.NewIdent("UnstructuredListToTableFunc"),
+					Args: []ast.Expr{
+						ast.NewIdent(tableConversionFnName(conv.fromPtrTo)),
+					},
+				},
+			})
+		}
+
 	}
 
-	// 2nd pass for newlines
-	b, err := format.Source(f.Bytes())
+	file := &ast.File{
+		Name: ast.NewIdent("kubernetes"),
+		Decls: []ast.Decl{
+			&ast.GenDecl{
+				Tok:   token.IMPORT,
+				Specs: importSpecs,
+			},
+			&ast.GenDecl{
+				Tok: token.VAR,
+				Specs: []ast.Spec{
+					&ast.ValueSpec{
+						Names: []*ast.Ident{
+							ast.NewIdent("UnstructuredListToTableFuncs"),
+						},
+						Values: []ast.Expr{
+							&ast.CompositeLit{
+								Type: &ast.MapType{
+									Key: &ast.SelectorExpr{
+										X:   ast.NewIdent("schema"),
+										Sel: ast.NewIdent("GroupVersionKind"),
+									},
+									Value: &ast.FuncType{
+										Params: &ast.FieldList{
+											List: []*ast.Field{
+												{
+													Type: &ast.StarExpr{
+														X: &ast.SelectorExpr{
+															X:   ast.NewIdent("unstructured"),
+															Sel: ast.NewIdent("UnstructuredList"),
+														},
+													},
+												},
+											},
+										},
+										Results: &ast.FieldList{
+											List: []*ast.Field{
+												{
+													Type: &ast.StarExpr{
+														X: &ast.SelectorExpr{
+															X:   ast.NewIdent("metav1"),
+															Sel: ast.NewIdent("Table"),
+														},
+													},
+												},
+												{
+													Type: ast.NewIdent("error"),
+												},
+											},
+										},
+									},
+								},
+								Elts: listMapKVE,
+							},
+						},
+					},
+				},
+			},
+			&ast.GenDecl{
+				Tok: token.VAR,
+				Specs: []ast.Spec{
+					&ast.ValueSpec{
+						Names: []*ast.Ident{
+							ast.NewIdent("UnstructuredToTableFuncs"),
+						},
+						Values: []ast.Expr{
+							&ast.CompositeLit{
+								Type: &ast.MapType{
+									Key: &ast.SelectorExpr{
+										X:   ast.NewIdent("schema"),
+										Sel: ast.NewIdent("GroupVersionKind"),
+									},
+									Value: &ast.FuncType{
+										Params: &ast.FieldList{
+											List: []*ast.Field{
+												{
+													Type: &ast.StarExpr{
+														X: &ast.SelectorExpr{
+															X:   ast.NewIdent("unstructured"),
+															Sel: ast.NewIdent("Unstructured"),
+														},
+													},
+												},
+											},
+										},
+										Results: &ast.FieldList{
+											List: []*ast.Field{
+												{
+													Type: &ast.StarExpr{
+														X: &ast.SelectorExpr{
+															X:   ast.NewIdent("metav1"),
+															Sel: ast.NewIdent("Table"),
+														},
+													},
+												},
+												{
+													Type: ast.NewIdent("error"),
+												},
+											},
+										},
+									},
+								},
+								Elts: objectMapKVE,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	return writeAST("zz_generated.unstructured.go", file)
+}
+
+func main() {
+	pkgs, err := packages.Load(&packages.Config{
+		Mode: packages.NeedName | packages.NeedTypes | packages.NeedSyntax,
+	}, pkgs...)
 	if err != nil {
 		panic(err)
 	}
 
-	if err := os.WriteFile("zz_generated.table.go", b, 0o644); err != nil {
+	infos, err := extractInfos(pkgs)
+	if err != nil {
 		panic(err)
 	}
 
+	if err := generateTables(infos); err != nil {
+		panic(fmt.Errorf("cannot generate tables: %w", err))
+	}
+
+	if err := generateUnstructuredTable(infos); err != nil {
+		panic(fmt.Errorf("cannot generate tables: %w", err))
+	}
 }

@@ -41,3 +41,23 @@ func UnstructuredListToTableFunc[
 		return listToTable(structured)
 	}
 }
+
+func UnstructuredToTableFunc[
+	TypeStruct any,
+	Type interface {
+		*TypeStruct
+		Object
+	},
+](
+	toTable func(Type) (*metav1.Table, error),
+) func(*unstructured.Unstructured) (*metav1.Table, error) {
+	return func(u *unstructured.Unstructured) (*metav1.Table, error) {
+		var structured Type = new(TypeStruct)
+		err := Structurize(u, structured)
+		if err != nil {
+			return nil, fmt.Errorf("cannot convert object to api type: %w", err)
+		}
+
+		return toTable(structured)
+	}
+}
