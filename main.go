@@ -266,8 +266,7 @@ func listHandlerFor(gvr schema.GroupVersionResource) http.Handler {
 		}
 
 		res := &unstructured.UnstructuredList{}
-		res.SetAPIVersion("v1")
-		res.SetKind(meta.listKind)
+		res.SetGroupVersionKind(gvr.GroupVersion().WithKind(meta.listKind))
 		for _, obj := range listObj.ObjectMetas {
 			path := ""
 			if obj.Namespace != "" {
