@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	undashctx "github.com/xdavidwu/undash/internal/context"
 	"github.com/xdavidwu/undash/internal/dashboard"
 	undashhttp "github.com/xdavidwu/undash/internal/http"
 	"github.com/xdavidwu/undash/internal/kubernetes"
@@ -33,7 +34,6 @@ type kindMeta struct {
 	singular           string
 	listKind           string
 	asTableIfRequested func(*http.Response) error
-	listToTable        func(*unstructured.UnstructuredList) (*metav1.Table, error)
 }
 
 var (
@@ -43,7 +43,6 @@ var (
 			singular:           "service",
 			listKind:           "ServiceList",
 			asTableIfRequested: undashhttp.RewriteAsTableIfRequested(kubernetes.CoreV1ServiceToTable),
-			listToTable:        kubernetes.UnstructuredListToTableFunc(kubernetes.CoreV1ServiceListToTable),
 		},
 	}
 )
@@ -104,14 +103,19 @@ func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
 			res.Items = append(res.Items, *obj.(*unstructured.Unstructured))
 		}
 
-		if undashhttp.AcceptsExactMediaType(r, undashhttp.MetaV1TableJSON) && kind.listToTable != nil {
-			table, err := kind.listToTable(res)
-			if err != nil {
-				return nil, fmt.Errorf("cannot convert list to table: %w", err)
-			}
+		if undashhttp.AcceptsExactMediaType(r, undashhttp.MetaV1TableJSON) {
+			gvk := res.GroupVersionKind()
+			if toTable, ok := kubernetes.UnstructuredListToTableFuncs[gvk]; ok {
+				table, err := toTable(res)
+				if err != nil {
+					return nil, fmt.Errorf("cannot convert list to table: %w", err)
+				}
 
-			w.Header().Set("Content-Type", undashhttp.MetaV1TableJSON.String())
-			return table, nil
+				w.Header().Set("Content-Type", undashhttp.MetaV1TableJSON.String())
+				return table, nil
+			} else {
+				undashctx.GetLogger(ctx).WarnContext(ctx, "list table func not registered", "gvk", gvk.String())
+			}
 		}
 
 		return res, nil
