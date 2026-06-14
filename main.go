@@ -315,16 +315,23 @@ func main() {
 				if gvr.Group != "" || meta.kind == "" {
 					continue
 				}
+
 				verbs := []string{"get", "delete", "update"}
 				if meta.listKind != "" {
 					verbs = append(verbs, "list")
 				}
+
+				scope := apidiscoveryv2.ScopeNamespace
+				if !meta.namespaced {
+					scope = apidiscoveryv2.ScopeCluster
+				}
+
 				discoveries = append(discoveries, apidiscoveryv2.APIResourceDiscovery{
 					Resource: gvr.Resource,
 					ResponseKind: &metav1.GroupVersionKind{
 						Kind: meta.kind,
 					},
-					Scope:            apidiscoveryv2.ScopeNamespace,
+					Scope:            scope,
 					SingularResource: meta.singular,
 					Verbs:            verbs,
 				})
