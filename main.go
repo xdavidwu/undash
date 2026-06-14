@@ -35,6 +35,7 @@ type verberMappedMeta struct {
 	namespaced bool
 	kind       string
 	listKind   string
+	itemsKey   string // resource if unset
 }
 
 var (
@@ -56,6 +57,9 @@ var (
 		verberClientTypeDefaultGV.WithResource("configmaps"): {
 			singular:   "configmap",
 			namespaced: true,
+			kind:       "ConfigMap",
+			listKind:   "ConfigMapList",
+			itemsKey:   "items",
 		},
 		verberClientTypeAppsGV.WithResource("daemonsets"): {
 			singular:   "daemonset",
@@ -68,6 +72,8 @@ var (
 		verberClientTypeDefaultGV.WithResource("events"): {
 			singular:   "event",
 			namespaced: true,
+			kind:       "Event",
+			listKind:   "EventList",
 		},
 		verberClientTypeAutoscalingGV.WithResource("horizontalpodautoscalers"): {
 			singular:   "horizontalpodautoscaler",
@@ -93,18 +99,24 @@ var (
 		verberClientTypeDefaultGV.WithResource("limitranges"): {
 			singular:   "limitrange",
 			namespaced: true,
+			kind:       "LimitRange",
 		},
 		verberClientTypeDefaultGV.WithResource("namespaces"): {
 			singular:   "namespace",
 			namespaced: false,
+			kind:       "Namespace",
 		},
 		verberClientTypeDefaultGV.WithResource("nodes"): {
 			singular:   "node",
 			namespaced: false,
+			kind:       "Node",
 		},
 		verberClientTypeDefaultGV.WithResource("persistentvolumeclaims"): {
 			singular:   "persistentvolumeclaim",
 			namespaced: true,
+			kind:       "PersistentVolumeClaim",
+			listKind:   "PersistentVolumeClaimList",
+			itemsKey:   "items",
 		},
 		verberClientTypeDefaultGV.WithResource("persistentvolumes"): {
 			singular:   "persistentvolume",
@@ -117,6 +129,8 @@ var (
 		verberClientTypeDefaultGV.WithResource("pods"): {
 			singular:   "pod",
 			namespaced: true,
+			kind:       "Pod",
+			listKind:   "PodList",
 		},
 		verberClientTypeAppsGV.WithResource("replicasets"): {
 			singular:   "replicaset",
@@ -125,14 +139,20 @@ var (
 		verberClientTypeDefaultGV.WithResource("replicationcontrollers"): {
 			singular:   "replicationcontroller",
 			namespaced: true,
+			kind:       "ReplicationController",
+			listKind:   "ReplicationControllerList",
+			itemsKey:   "replicationControllers",
 		},
 		verberClientTypeDefaultGV.WithResource("resourcequotas"): {
 			singular:   "resourcequota",
 			namespaced: true,
+			kind:       "ResourceQuota",
 		},
 		verberClientTypeDefaultGV.WithResource("secrets"): {
 			singular:   "secret",
 			namespaced: true,
+			kind:       "Secret",
+			listKind:   "SecretList",
 		},
 		verberClientTypeDefaultGV.WithResource("services"): {
 			singular:   "service",
@@ -143,6 +163,9 @@ var (
 		verberClientTypeDefaultGV.WithResource("serviceaccounts"): {
 			singular:   "serviceaccount",
 			namespaced: true,
+			kind:       "ServiceAccount",
+			listKind:   "ServiceAccountList",
+			itemsKey:   "items",
 		},
 		verberClientTypeAppsGV.WithResource("statefulsets"): {
 			singular:   "statefulset",
@@ -153,8 +176,9 @@ var (
 			namespaced: false,
 		},
 		verberClientTypeDefaultGV.WithResource("endpoints"): {
-			singular:   "endpoint",
+			singular:   "endpoint", // XXX not really?
 			namespaced: true,
+			kind:       "Endpoints",
 		},
 		verberClientTypeNetworkingGV.WithResource("networkpolicies"): {
 			singular:   "networkpolicy",
@@ -207,7 +231,12 @@ func namespacedListHandlerFor(gvr schema.GroupVersionResource) http.Handler {
 			return nil, fmt.Errorf("cannot read object list: %w", err)
 		}
 
-		listObj := dashboard.ListUnmarshaler{Resource: gvr.Resource}
+		itemsKey := gvr.Resource
+		if meta.itemsKey != "" {
+			itemsKey = meta.itemsKey
+		}
+
+		listObj := dashboard.ListUnmarshaler{ItemsKey: itemsKey}
 		if err := json.Unmarshal(body, &listObj); err != nil {
 			return nil, fmt.Errorf("cannot unmarshal object list: %w", err)
 		}
@@ -222,6 +251,7 @@ func namespacedListHandlerFor(gvr schema.GroupVersionResource) http.Handler {
 				fmt.Sprintf("%s/api/v1/_raw/%s/namespace/%s/name/%s", upstream, meta.singular, ns, obj.Name),
 				nil,
 			)
+			// TODO fight with MSG_DASHBOARD_EXCLUSIVE_RESOURCE_ERROR?
 			if err != nil {
 				return nil, fmt.Errorf("cannot get real object: %w", err)
 			}
@@ -294,6 +324,8 @@ func main() {
 					SingularResource: meta.singular,
 					Verbs:            verbs,
 				})
+				// TODO shortnames
+				// codegen api types => internal types => storage func (r *REST) ShortNames() []string
 			}
 			list := &apidiscoveryv2.APIGroupDiscoveryList{
 				TypeMeta: metav1.TypeMeta{

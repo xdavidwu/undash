@@ -12,7 +12,7 @@ type ObjectMeta struct {
 // Implements [json.Unmarshaler], to be passed to e.g. [json.Unmarshal],
 // [Resource] should be set in initialization as the resource name in lowercase, plural form.
 type ListUnmarshaler struct {
-	Resource    string
+	ItemsKey    string
 	ObjectMetas []ObjectMeta
 }
 
@@ -24,9 +24,9 @@ func (l *ListUnmarshaler) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("cannot unmarshal first layer: %w", err)
 	}
 
-	list, ok := firstLayer[l.Resource]
+	list, ok := firstLayer[l.ItemsKey]
 	if !ok {
-		return fmt.Errorf("expected key %s at first layer not found", l.Resource)
+		return fmt.Errorf("expected key %s at first layer not found", l.ItemsKey)
 	}
 
 	unmarshaledList := []struct {
