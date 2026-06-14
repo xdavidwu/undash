@@ -64,10 +64,12 @@ var (
 		verberClientTypeAppsGV.WithResource("daemonsets"): {
 			singular:   "daemonset",
 			namespaced: true,
+			kind:       "DaemonSet",
 		},
 		verberClientTypeAppsGV.WithResource("deployments"): {
 			singular:   "deployment",
 			namespaced: true,
+			kind:       "Deployment",
 		},
 		verberClientTypeDefaultGV.WithResource("events"): {
 			singular:   "event",
@@ -78,22 +80,27 @@ var (
 		verberClientTypeAutoscalingGV.WithResource("horizontalpodautoscalers"): {
 			singular:   "horizontalpodautoscaler",
 			namespaced: true,
+			kind:       "HorizontalPodAutoscaler",
 		},
 		verberClientTypeNetworkingGV.WithResource("ingresses"): {
 			singular:   "ingress",
 			namespaced: true,
+			kind:       "Ingress",
 		},
 		verberClientTypeNetworkingGV.WithResource("ingressclasses"): {
 			singular:   "ingressclass",
 			namespaced: false,
+			kind:       "IngressClass",
 		},
 		verberClientTypeBatchGV.WithResource("jobs"): {
 			singular:   "job",
 			namespaced: true,
+			kind:       "Job",
 		},
 		verberClientTypeBetaBatchGV.WithResource("cronjobs"): {
 			singular:   "cronjob",
 			namespaced: true,
+			kind:       "CronJob",
 		},
 		// XXX singular on dashboard map?
 		verberClientTypeDefaultGV.WithResource("limitranges"): {
@@ -130,6 +137,7 @@ var (
 		verberClientTypeAPIExtensionsGV.WithResource("customresourcedefinitions"): {
 			singular:   "customresourcedefinition",
 			namespaced: false,
+			kind:       "CustomResourceDefinition",
 		},
 		verberClientTypeDefaultGV.WithResource("pods"): {
 			singular:   "pod",
@@ -140,6 +148,7 @@ var (
 		verberClientTypeAppsGV.WithResource("replicasets"): {
 			singular:   "replicaset",
 			namespaced: true,
+			kind:       "ReplicaSet",
 		},
 		verberClientTypeDefaultGV.WithResource("replicationcontrollers"): {
 			singular:   "replicationcontroller",
@@ -175,10 +184,12 @@ var (
 		verberClientTypeAppsGV.WithResource("statefulsets"): {
 			singular:   "statefulset",
 			namespaced: true,
+			kind:       "StatefulSet",
 		},
 		verberClientTypeStorageGV.WithResource("storageclasses"): {
 			singular:   "storageclass",
 			namespaced: false,
+			kind:       "StorageClass",
 		},
 		verberClientTypeDefaultGV.WithResource("endpoints"): {
 			singular:   "endpoint", // XXX not really?
@@ -188,26 +199,32 @@ var (
 		verberClientTypeNetworkingGV.WithResource("networkpolicies"): {
 			singular:   "networkpolicy",
 			namespaced: true,
+			kind:       "NetworkPolicy",
 		},
 		verberClientTypeRbacGV.WithResource("clusterroles"): {
 			singular:   "clusterrole",
 			namespaced: false,
+			kind:       "ClusterRole",
 		},
 		verberClientTypeRbacGV.WithResource("clusterrolebindings"): {
 			singular:   "clusterrolebinding",
 			namespaced: false,
+			kind:       "ClusterRoleBinding",
 		},
 		verberClientTypeRbacGV.WithResource("roles"): {
 			singular:   "role",
 			namespaced: true,
+			kind:       "Role",
 		},
 		verberClientTypeRbacGV.WithResource("rolebindings"): {
 			singular:   "rolebinding",
 			namespaced: true,
+			kind:       "RoleBinding",
 		},
 		verberClientTypePluginsGV.WithResource("plugins"): {
 			singular:   "plugin",
 			namespaced: true,
+			kind:       "Plugin",
 		},
 		// TODO custom resource via parsing definitions?
 	}
@@ -305,86 +322,104 @@ func apiPrefix(gv schema.GroupVersion) string {
 	return "/apis/" + gv.Group + "/" + gv.Version
 }
 
+// XXX supporting apidiscoveryv2 (1.30+) since it's easier
+// but dashboard targets 1.25
+func buildAPIGroupDiscoveries() map[string]*apidiscoveryv2.APIGroupDiscovery {
+	versionDiscoveries := map[schema.GroupVersion]*apidiscoveryv2.APIVersionDiscovery{}
+	for gvr, meta := range verberMappedResources {
+		versionDiscovery, ok := versionDiscoveries[gvr.GroupVersion()]
+		if !ok {
+			versionDiscoveries[gvr.GroupVersion()] = &apidiscoveryv2.APIVersionDiscovery{
+				Version:   gvr.Version,
+				Freshness: apidiscoveryv2.DiscoveryFreshnessCurrent,
+			}
+			versionDiscovery = versionDiscoveries[gvr.GroupVersion()]
+		}
+
+		verbs := []string{"get", "delete", "update"}
+		if meta.listKind != "" {
+			verbs = append(verbs, "list")
+		}
+
+		scope := apidiscoveryv2.ScopeNamespace
+		if !meta.namespaced {
+			scope = apidiscoveryv2.ScopeCluster
+		}
+
+		// TODO shortnames
+		// codegen api types => internal types => storage func (r *REST) ShortNames() []string
+
+		versionDiscovery.Resources = append(versionDiscovery.Resources, apidiscoveryv2.APIResourceDiscovery{
+			Resource: gvr.Resource,
+			ResponseKind: &metav1.GroupVersionKind{
+				Kind: meta.kind,
+			},
+			Scope:            scope,
+			SingularResource: meta.singular,
+			Verbs:            verbs,
+		})
+	}
+
+	res := map[string]*apidiscoveryv2.APIGroupDiscovery{}
+	for gv, versionDiscovery := range versionDiscoveries {
+		groupDiscovery, ok := res[gv.Group]
+		if !ok {
+			res[gv.Group] = &apidiscoveryv2.APIGroupDiscovery{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: gv.Group,
+				},
+			}
+			groupDiscovery = res[gv.Group]
+		}
+
+		// we don't really need to sort here since every kind in dashboard is of single api version
+		groupDiscovery.Versions = append(groupDiscovery.Versions, *versionDiscovery)
+	}
+
+	return res
+}
+
+func buildAPIGroupDiscoveryLists() (core, apis apidiscoveryv2.APIGroupDiscoveryList) {
+	gvk := schema.GroupVersionKind{
+		Group:   "apidiscovery.k8s.io",
+		Version: "v2",
+		Kind:    "APIGroupDiscoveryList",
+	}
+	core.SetGroupVersionKind(gvk)
+	apis.SetGroupVersionKind(gvk)
+
+	for group, discovery := range buildAPIGroupDiscoveries() {
+		if group == "" {
+			core.Items = append(core.Items, *discovery)
+		} else {
+			apis.Items = append(apis.Items, *discovery)
+		}
+	}
+	return
+}
+
 func main() {
 	logger := slog.Default()
 	ctx := context.Background()
+
+	core, apis := buildAPIGroupDiscoveryLists()
 
 	mux := http.NewServeMux()
 	mux.Handle(
 		"/api",
 		undashhttp.JSONHandler(func(w http.ResponseWriter, r *http.Request) (*apidiscoveryv2.APIGroupDiscoveryList, error) {
-			// XXX supporting apidiscoveryv2 (1.30+) since it's easier
-			// but dashboard targets 1.25
-			discoveries := []apidiscoveryv2.APIResourceDiscovery{}
-			for gvr, meta := range verberMappedResources {
-				if gvr.Group != "" || meta.kind == "" {
-					continue
-				}
-
-				verbs := []string{"get", "delete", "update"}
-				if meta.listKind != "" {
-					verbs = append(verbs, "list")
-				}
-
-				scope := apidiscoveryv2.ScopeNamespace
-				if !meta.namespaced {
-					scope = apidiscoveryv2.ScopeCluster
-				}
-
-				discoveries = append(discoveries, apidiscoveryv2.APIResourceDiscovery{
-					Resource: gvr.Resource,
-					ResponseKind: &metav1.GroupVersionKind{
-						Kind: meta.kind,
-					},
-					Scope:            scope,
-					SingularResource: meta.singular,
-					Verbs:            verbs,
-				})
-				// TODO shortnames
-				// codegen api types => internal types => storage func (r *REST) ShortNames() []string
-			}
-			list := &apidiscoveryv2.APIGroupDiscoveryList{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "apidiscovery.k8s.io/v2",
-					Kind:       "APIGroupDiscoveryList",
-				},
-				Items: []apidiscoveryv2.APIGroupDiscovery{
-					{
-						Versions: []apidiscoveryv2.APIVersionDiscovery{
-							{
-								Version:   "v1",
-								Resources: discoveries,
-								Freshness: apidiscoveryv2.DiscoveryFreshnessCurrent,
-							},
-						},
-					},
-				},
-			}
-
 			w.Header().Set("Content-Type", apidiscoveryv2MimeType)
-			return list, nil
+			return &core, nil
 		}),
 	)
 	mux.Handle(
 		"/apis",
 		undashhttp.JSONHandler(func(w http.ResponseWriter, r *http.Request) (*apidiscoveryv2.APIGroupDiscoveryList, error) {
-			// XXX supporting apidiscoveryv2 (1.30+) since it's easier
-			// but dashboard targets 1.25
-			list := &apidiscoveryv2.APIGroupDiscoveryList{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "apidiscovery.k8s.io/v2",
-					Kind:       "APIGroupDiscoveryList",
-				},
-				// TODO
-				Items: []apidiscoveryv2.APIGroupDiscovery{},
-			}
-
 			w.Header().Set("Content-Type", apidiscoveryv2MimeType)
-			return list, nil
+			return &apis, nil
 		}),
 	)
 
-	// TODO advertise these at discovery
 	for gvr, meta := range verberMappedResources {
 		prefix := apiPrefix(gvr.GroupVersion())
 		if meta.listKind != "" {
