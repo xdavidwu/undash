@@ -1,6 +1,8 @@
 package kubernetes
 
 import (
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	admissionregistrationv1 "k8s.io/kubernetes/pkg/apis/admissionregistration/v1"
 	admissionregistrationv1alpha1 "k8s.io/kubernetes/pkg/apis/admissionregistration/v1alpha1"
 	admissionregistrationv1beta1 "k8s.io/kubernetes/pkg/apis/admissionregistration/v1beta1"
@@ -57,6 +59,18 @@ import (
 	storagev1beta1 "k8s.io/kubernetes/pkg/apis/storage/v1beta1"
 	storagemigrationv1alpha1 "k8s.io/kubernetes/pkg/apis/storagemigration/v1alpha1"
 )
+
+// apiextensionsv1 objects to metav1.Table functions
+var ApiextensionsV1CustomResourceDefinitionToTable = ToTableFunc(apiextensionsv1.Convert_v1_CustomResourceDefinition_To_apiextensions_CustomResourceDefinition)
+
+// apiextensionsv1 lists to metav1.Table functions
+var ApiextensionsV1CustomResourceDefinitionListToTable = ToTableFunc(apiextensionsv1.Convert_v1_CustomResourceDefinitionList_To_apiextensions_CustomResourceDefinitionList)
+
+// apiextensionsv1beta1 objects to metav1.Table functions
+var ApiextensionsV1beta1CustomResourceDefinitionToTable = ToTableFunc(apiextensionsv1beta1.Convert_v1beta1_CustomResourceDefinition_To_apiextensions_CustomResourceDefinition)
+
+// apiextensionsv1beta1 lists to metav1.Table functions
+var ApiextensionsV1beta1CustomResourceDefinitionListToTable = ToTableFunc(apiextensionsv1beta1.Convert_v1beta1_CustomResourceDefinitionList_To_apiextensions_CustomResourceDefinitionList)
 
 // authenticationv1 objects to metav1.Table functions
 var (

@@ -97,6 +97,8 @@ func localImportName(path string) string {
 
 // find pkg/apis/ -type d -mindepth 2 -maxdepth 2 -name 'v[0-9]*' | sort | sed 's|^|"k8s.io/kubernetes/|;s|$|",|'
 var pkgs = []string{
+	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1",
+	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1",
 	"k8s.io/kubernetes/pkg/apis/abac/v0",
 	"k8s.io/kubernetes/pkg/apis/abac/v1beta1",
 	"k8s.io/kubernetes/pkg/apis/admission/v1",

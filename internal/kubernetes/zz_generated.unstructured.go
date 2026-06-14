@@ -1,6 +1,8 @@
 package kubernetes
 
 import (
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -62,6 +64,8 @@ import (
 )
 
 var UnstructuredListToTableFuncs = map[schema.GroupVersionKind]func(*unstructured.UnstructuredList) (*metav1.Table, error){
+	apiextensionsv1.SchemeGroupVersion.WithKind("CustomResourceDefinitionList"):                       UnstructuredListToTableFunc(ApiextensionsV1CustomResourceDefinitionListToTable),
+	apiextensionsv1beta1.SchemeGroupVersion.WithKind("CustomResourceDefinitionList"):                  UnstructuredListToTableFunc(ApiextensionsV1beta1CustomResourceDefinitionListToTable),
 	admissionregistrationv1.SchemeGroupVersion.WithKind("MutatingWebhookConfigurationList"):           UnstructuredListToTableFunc(AdmissionregistrationV1MutatingWebhookConfigurationListToTable),
 	admissionregistrationv1.SchemeGroupVersion.WithKind("ValidatingAdmissionPolicyBindingList"):       UnstructuredListToTableFunc(AdmissionregistrationV1ValidatingAdmissionPolicyBindingListToTable),
 	admissionregistrationv1.SchemeGroupVersion.WithKind("ValidatingAdmissionPolicyList"):              UnstructuredListToTableFunc(AdmissionregistrationV1ValidatingAdmissionPolicyListToTable),
@@ -184,6 +188,8 @@ var UnstructuredListToTableFuncs = map[schema.GroupVersionKind]func(*unstructure
 	storagemigrationv1alpha1.SchemeGroupVersion.WithKind("StorageVersionMigrationList"):               UnstructuredListToTableFunc(StoragemigrationV1alpha1StorageVersionMigrationListToTable),
 }
 var UnstructuredToTableFuncs = map[schema.GroupVersionKind]func(*unstructured.Unstructured) (*metav1.Table, error){
+	apiextensionsv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"):                       UnstructuredToTableFunc(ApiextensionsV1CustomResourceDefinitionToTable),
+	apiextensionsv1beta1.SchemeGroupVersion.WithKind("CustomResourceDefinition"):                  UnstructuredToTableFunc(ApiextensionsV1beta1CustomResourceDefinitionToTable),
 	authenticationv1.SchemeGroupVersion.WithKind("SelfSubjectReview"):                             UnstructuredToTableFunc(AuthenticationV1SelfSubjectReviewToTable),
 	authenticationv1.SchemeGroupVersion.WithKind("TokenRequest"):                                  UnstructuredToTableFunc(AuthenticationV1TokenRequestToTable),
 	authenticationv1.SchemeGroupVersion.WithKind("TokenReview"):                                   UnstructuredToTableFunc(AuthenticationV1TokenReviewToTable),
