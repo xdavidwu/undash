@@ -31,11 +31,13 @@ const (
 )
 
 type verberMappedMeta struct {
-	singular   string
-	namespaced bool
-	kind       string
-	listKind   string
-	itemsKey   string // resource if unset
+	singular           string
+	namespaced         bool
+	kind               string
+	listKind           string
+	listPath           string // singular if unset
+	itemsKey           string // resource if unset
+	namespacedListOnly bool
 }
 
 var (
@@ -65,11 +67,14 @@ var (
 			singular:   "daemonset",
 			namespaced: true,
 			kind:       "DaemonSet",
+			listKind:   "DaemonSetList",
+			itemsKey:   "daemonSets",
 		},
 		verberClientTypeAppsGV.WithResource("deployments"): {
 			singular:   "deployment",
 			namespaced: true,
 			kind:       "Deployment",
+			listKind:   "DeploymentList",
 		},
 		verberClientTypeDefaultGV.WithResource("events"): {
 			singular:   "event",
@@ -81,26 +86,34 @@ var (
 			singular:   "horizontalpodautoscaler",
 			namespaced: true,
 			kind:       "HorizontalPodAutoscaler",
+			listKind:   "HorizontalPodAutoscalerList",
 		},
 		verberClientTypeNetworkingGV.WithResource("ingresses"): {
 			singular:   "ingress",
 			namespaced: true,
 			kind:       "Ingress",
+			listKind:   "IngressList",
+			itemsKey:   "items",
 		},
 		verberClientTypeNetworkingGV.WithResource("ingressclasses"): {
 			singular:   "ingressclass",
 			namespaced: false,
 			kind:       "IngressClass",
+			listKind:   "IngressClassList",
+			itemsKey:   "items",
 		},
 		verberClientTypeBatchGV.WithResource("jobs"): {
 			singular:   "job",
 			namespaced: true,
 			kind:       "Job",
+			listKind:   "JobList",
 		},
 		verberClientTypeBetaBatchGV.WithResource("cronjobs"): {
 			singular:   "cronjob",
 			namespaced: true,
 			kind:       "CronJob",
+			listKind:   "CronJobList",
+			itemsKey:   "items",
 		},
 		// XXX singular on dashboard map?
 		verberClientTypeDefaultGV.WithResource("limitranges"): {
@@ -138,6 +151,9 @@ var (
 			singular:   "customresourcedefinition",
 			namespaced: false,
 			kind:       "CustomResourceDefinition",
+			listKind:   "CustomResourceDefinitionList",
+			listPath:   "crd",
+			itemsKey:   "items",
 		},
 		verberClientTypeDefaultGV.WithResource("pods"): {
 			singular:   "pod",
@@ -149,6 +165,8 @@ var (
 			singular:   "replicaset",
 			namespaced: true,
 			kind:       "ReplicaSet",
+			listKind:   "ReplicaSetList",
+			itemsKey:   "replicaSets",
 		},
 		verberClientTypeDefaultGV.WithResource("replicationcontrollers"): {
 			singular:   "replicationcontroller",
@@ -185,11 +203,15 @@ var (
 			singular:   "statefulset",
 			namespaced: true,
 			kind:       "StatefulSet",
+			listKind:   "StatefulSetList",
+			itemsKey:   "statefulSets",
 		},
 		verberClientTypeStorageGV.WithResource("storageclasses"): {
 			singular:   "storageclass",
 			namespaced: false,
 			kind:       "StorageClass",
+			listKind:   "StorageClassList",
+			itemsKey:   "items",
 		},
 		verberClientTypeDefaultGV.WithResource("endpoints"): {
 			singular:   "endpoint", // XXX not really?
@@ -200,31 +222,46 @@ var (
 			singular:   "networkpolicy",
 			namespaced: true,
 			kind:       "NetworkPolicy",
+			listKind:   "NetworkPolicyList",
+			itemsKey:   "items",
 		},
 		verberClientTypeRbacGV.WithResource("clusterroles"): {
 			singular:   "clusterrole",
 			namespaced: false,
 			kind:       "ClusterRole",
+			listKind:   "ClusterRoleList",
+			itemsKey:   "items",
 		},
 		verberClientTypeRbacGV.WithResource("clusterrolebindings"): {
 			singular:   "clusterrolebinding",
 			namespaced: false,
 			kind:       "ClusterRoleBinding",
+			listKind:   "ClusterRoleBindingList",
+			itemsKey:   "items",
 		},
 		verberClientTypeRbacGV.WithResource("roles"): {
-			singular:   "role",
-			namespaced: true,
-			kind:       "Role",
+			singular:           "role",
+			namespaced:         true,
+			kind:               "Role",
+			listKind:           "RoleList",
+			itemsKey:           "items",
+			namespacedListOnly: true,
 		},
 		verberClientTypeRbacGV.WithResource("rolebindings"): {
-			singular:   "rolebinding",
-			namespaced: true,
-			kind:       "RoleBinding",
+			singular:           "rolebinding",
+			namespaced:         true,
+			kind:               "RoleBinding",
+			listKind:           "RoleBindingList",
+			itemsKey:           "items",
+			namespacedListOnly: true,
 		},
 		verberClientTypePluginsGV.WithResource("plugins"): {
-			singular:   "plugin",
-			namespaced: true,
-			kind:       "Plugin",
+			singular:           "plugin",
+			namespaced:         true,
+			kind:               "Plugin",
+			listKind:           "PluginList",
+			itemsKey:           "items",
+			namespacedListOnly: true,
 		},
 		// TODO custom resource via parsing definitions?
 	}
@@ -237,11 +274,16 @@ func listHandlerFor(gvr schema.GroupVersionResource) http.Handler {
 		client := undashhttp.NewDefaultClient()
 		ctx := r.Context()
 
+		listPath := meta.singular
+		if meta.listPath != "" {
+			listPath = meta.listPath
+		}
+
 		path := ""
 		if ns != "" {
-			path = fmt.Sprintf("%s/api/v1/%s/%s", upstream, meta.singular, ns)
+			path = fmt.Sprintf("%s/api/v1/%s/%s", upstream, listPath, ns)
 		} else {
-			path = fmt.Sprintf("%s/api/v1/%s", upstream, meta.singular)
+			path = fmt.Sprintf("%s/api/v1/%s", upstream, listPath)
 		}
 
 		listRes, err := client.Call(ctx, http.MethodGet, path, nil)
@@ -424,7 +466,7 @@ func main() {
 
 	for gvr, meta := range verberMappedResources {
 		prefix := apiPrefix(gvr.GroupVersion())
-		if meta.listKind != "" {
+		if meta.listKind != "" && !meta.namespacedListOnly {
 			mux.Handle(
 				"GET "+prefix+"/"+gvr.Resource,
 				listHandlerFor(gvr),
