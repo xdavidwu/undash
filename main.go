@@ -30,26 +30,14 @@ const (
 	apidiscoveryv2MimeType = runtime.ContentTypeJSON + ";g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList"
 )
 
-type kindMeta struct {
-	kind     string
-	singular string
-	listKind string
-}
-
 type verberMappedMeta struct {
 	singular   string
 	namespaced bool
+	kind       string
+	listKind   string
 }
 
 var (
-	coreNamespacedResources = map[string]kindMeta{
-		"services": {
-			kind:     "Service",
-			singular: "service",
-			listKind: "ServiceList",
-		},
-	}
-
 	verberClientTypeDefaultGV       = schema.GroupVersion{Group: "", Version: "v1"}
 	verberClientTypeAppsGV          = schema.GroupVersion{Group: "apps", Version: "v1"}
 	verberClientTypeAutoscalingGV   = schema.GroupVersion{Group: "autoscaling", Version: "v1"}
@@ -149,6 +137,8 @@ var (
 		verberClientTypeDefaultGV.WithResource("services"): {
 			singular:   "service",
 			namespaced: true,
+			kind:       "Service",
+			listKind:   "ServiceList",
 		},
 		verberClientTypeDefaultGV.WithResource("serviceaccounts"): {
 			singular:   "serviceaccount",
@@ -194,17 +184,17 @@ var (
 	}
 )
 
-func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
+func namespacedListHandlerFor(gvr schema.GroupVersionResource) http.Handler {
 	return undashhttp.JSONHandler(func(w http.ResponseWriter, r *http.Request) (runtime.Object, error) {
 		ns := r.PathValue("namespace")
-		kind := coreNamespacedResources[resource]
+		meta := verberMappedResources[gvr]
 		client := undashhttp.NewDefaultClient()
 		ctx := r.Context()
 
 		listRes, err := client.Call(
 			ctx,
 			http.MethodGet,
-			fmt.Sprintf("%s/api/v1/%s/%s", upstream, kind.singular, ns),
+			fmt.Sprintf("%s/api/v1/%s/%s", upstream, meta.singular, ns),
 			nil,
 		)
 		if err != nil {
@@ -217,19 +207,19 @@ func coreResourceNamespacedListHandlerFor(resource string) http.Handler {
 			return nil, fmt.Errorf("cannot read object list: %w", err)
 		}
 
-		listObj := dashboard.ListUnmarshaler{Resource: resource}
+		listObj := dashboard.ListUnmarshaler{Resource: gvr.Resource}
 		if err := json.Unmarshal(body, &listObj); err != nil {
 			return nil, fmt.Errorf("cannot unmarshal object list: %w", err)
 		}
 
 		res := &unstructured.UnstructuredList{}
 		res.SetAPIVersion("v1")
-		res.SetKind(kind.listKind)
+		res.SetKind(meta.listKind)
 		for _, obj := range listObj.ObjectMetas {
 			realObjRes, err := client.Call(
 				ctx,
 				http.MethodGet,
-				fmt.Sprintf("%s/api/v1/_raw/%s/namespace/%s/name/%s", upstream, kind.singular, ns, obj.Name),
+				fmt.Sprintf("%s/api/v1/_raw/%s/namespace/%s/name/%s", upstream, meta.singular, ns, obj.Name),
 				nil,
 			)
 			if err != nil {
@@ -287,15 +277,22 @@ func main() {
 			// XXX supporting apidiscoveryv2 (1.30+) since it's easier
 			// but dashboard targets 1.25
 			discoveries := []apidiscoveryv2.APIResourceDiscovery{}
-			for resource, kind := range coreNamespacedResources {
+			for gvr, meta := range verberMappedResources {
+				if gvr.Group != "" || meta.kind == "" {
+					continue
+				}
+				verbs := []string{"get", "delete", "update"}
+				if meta.listKind != "" {
+					verbs = append(verbs, "list")
+				}
 				discoveries = append(discoveries, apidiscoveryv2.APIResourceDiscovery{
-					Resource: resource,
+					Resource: gvr.Resource,
 					ResponseKind: &metav1.GroupVersionKind{
-						Kind: kind.kind,
+						Kind: meta.kind,
 					},
 					Scope:            apidiscoveryv2.ScopeNamespace,
-					SingularResource: kind.singular,
-					Verbs:            []string{"list", "get", "delete", "update"},
+					SingularResource: meta.singular,
+					Verbs:            verbs,
 				})
 			}
 			list := &apidiscoveryv2.APIGroupDiscoveryList{
@@ -330,6 +327,7 @@ func main() {
 					APIVersion: "apidiscovery.k8s.io/v2",
 					Kind:       "APIGroupDiscoveryList",
 				},
+				// TODO
 				Items: []apidiscoveryv2.APIGroupDiscovery{},
 			}
 
@@ -338,18 +336,12 @@ func main() {
 		}),
 	)
 
-	for resource := range coreNamespacedResources {
-		mux.Handle(
-			"/api/v1/namespaces/{namespace}/"+resource,
-			coreResourceNamespacedListHandlerFor(resource),
-		)
-	}
-
 	// TODO advertise these at discovery
 	for gvr, meta := range verberMappedResources {
+		prefix := apiPrefix(gvr.GroupVersion())
 		if meta.namespaced {
 			mux.Handle(
-				apiPrefix(gvr.GroupVersion())+"/namespaces/{namespace}/"+gvr.Resource+"/{name}",
+				prefix+"/namespaces/{namespace}/"+gvr.Resource+"/{name}",
 				&httputil.ReverseProxy{
 					Transport: undashhttp.NoExplicitCompression(undashhttp.RequestLog(http.DefaultTransport)),
 					Rewrite: func(r *httputil.ProxyRequest) {
@@ -372,9 +364,16 @@ func main() {
 					),
 				},
 			)
+
+			if meta.listKind != "" {
+				mux.Handle(
+					"GET "+prefix+"/namespaces/{namespace}/"+gvr.Resource,
+					namespacedListHandlerFor(gvr),
+				)
+			}
 		} else {
 			mux.Handle(
-				apiPrefix(gvr.GroupVersion())+"/"+gvr.Resource+"/{name}",
+				prefix+"/"+gvr.Resource+"/{name}",
 				&httputil.ReverseProxy{
 					Transport: undashhttp.NoExplicitCompression(undashhttp.RequestLog(http.DefaultTransport)),
 					Rewrite: func(r *httputil.ProxyRequest) {
