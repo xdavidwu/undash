@@ -1,16 +1,20 @@
 package http
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-)
 
-// TODO StatusReason
+	undashctx "github.com/xdavidwu/undash/internal/context"
+	"github.com/xdavidwu/undash/internal/kubernetes"
+)
 
 var (
 	statusReasonFromCode = map[int]metav1.StatusReason{
@@ -75,32 +79,27 @@ func WriteErrorAsMetaV1Status(w http.ResponseWriter, err error) {
 	encoder.Encode(status)
 }
 
-func RewriteAsTableIfRequested[
-	TypeStruct any,
-	Type interface {
-		*TypeStruct
-		runtime.Object
-	},
-](
-	toTable func(Type) (*metav1.Table, error),
-) func(*http.Response) error {
-	return func(r *http.Response) error {
-		if r.StatusCode != http.StatusOK {
-			return nil
-		}
-		if !AcceptsExactMediaType(r.Request, MetaV1TableJSON) {
-			return nil
-		}
+func RewriteObjectAsTableIfRequested(r *http.Response) error {
+	if r.StatusCode != http.StatusOK {
+		return nil
+	}
+	if !AcceptsExactMediaType(r.Request, MetaV1TableJSON) {
+		return nil
+	}
 
-		origBody := r.Body
-		defer origBody.Close()
+	b, err := io.ReadAll(r.Body)
+	r.Body.Close()
+	if err != nil {
+		return err
+	}
 
-		var obj Type = new(TypeStruct)
-		decoder := json.NewDecoder(origBody)
-		if err := decoder.Decode(obj); err != nil {
-			return err
-		}
+	obj := &unstructured.Unstructured{}
+	if err := json.Unmarshal(b, obj); err != nil {
+		return err
+	}
 
+	gvk := obj.GroupVersionKind()
+	if toTable, ok := kubernetes.UnstructuredToTableFuncs[gvk]; ok {
 		table, err := toTable(obj)
 		if err != nil {
 			return fmt.Errorf("cannot convert object to table: %w", err)
@@ -108,4 +107,10 @@ func RewriteAsTableIfRequested[
 
 		return rewriteToJSON(r, table, MetaV1TableJSON.String())
 	}
+
+	ctx := r.Request.Context()
+	undashctx.GetLogger(ctx).WarnContext(ctx, "object table func not registered", "gvk", gvk.String())
+
+	r.Body = io.NopCloser(bytes.NewBuffer(b))
+	return nil
 }

@@ -30,19 +30,17 @@ const (
 )
 
 type kindMeta struct {
-	kind               string
-	singular           string
-	listKind           string
-	asTableIfRequested func(*http.Response) error
+	kind     string
+	singular string
+	listKind string
 }
 
 var (
 	coreNamespacedResources = map[string]kindMeta{
 		"services": {
-			kind:               "Service",
-			singular:           "service",
-			listKind:           "ServiceList",
-			asTableIfRequested: undashhttp.RewriteAsTableIfRequested(kubernetes.CoreV1ServiceToTable),
+			kind:     "Service",
+			singular: "service",
+			listKind: "ServiceList",
 		},
 	}
 )
@@ -210,7 +208,7 @@ func main() {
 				},
 				ModifyResponse: undashhttp.ChainModifyResponse(
 					undashhttp.ErrorResponseAsMetaV1Status,
-					kind.asTableIfRequested,
+					undashhttp.RewriteObjectAsTableIfRequested,
 				),
 			},
 		)
