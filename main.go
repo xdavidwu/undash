@@ -105,11 +105,13 @@ var (
 			singular:   "namespace",
 			namespaced: false,
 			kind:       "Namespace",
+			listKind:   "NamespaceList",
 		},
 		verberClientTypeDefaultGV.WithResource("nodes"): {
 			singular:   "node",
 			namespaced: false,
 			kind:       "Node",
+			listKind:   "NodeList",
 		},
 		verberClientTypeDefaultGV.WithResource("persistentvolumeclaims"): {
 			singular:   "persistentvolumeclaim",
@@ -121,6 +123,9 @@ var (
 		verberClientTypeDefaultGV.WithResource("persistentvolumes"): {
 			singular:   "persistentvolume",
 			namespaced: false,
+			kind:       "PersistentVolume",
+			listKind:   "PersistentVolumeList",
+			itemsKey:   "items",
 		},
 		verberClientTypeAPIExtensionsGV.WithResource("customresourcedefinitions"): {
 			singular:   "customresourcedefinition",
