@@ -99,17 +99,20 @@ func RewriteObjectAsTableIfRequested(r *http.Response) error {
 	}
 
 	gvk := obj.GroupVersionKind()
+	ctx := r.Request.Context()
 	if toTable, ok := kubernetes.UnstructuredToTableFuncs[gvk]; ok {
 		table, err := toTable(obj)
 		if err != nil {
-			return fmt.Errorf("cannot convert object to table: %w", err)
+			if !kubernetes.IsTableUnsupported(err) {
+				return fmt.Errorf("cannot convert object to table: %w", err)
+			}
+			undashctx.GetLogger(ctx).WarnContext(ctx, "object table func unsupported", "gvk", gvk.String())
+		} else {
+			return rewriteToJSON(r, table, MetaV1TableJSON.String())
 		}
-
-		return rewriteToJSON(r, table, MetaV1TableJSON.String())
+	} else {
+		undashctx.GetLogger(ctx).WarnContext(ctx, "object table func not registered", "gvk", gvk.String())
 	}
-
-	ctx := r.Request.Context()
-	undashctx.GetLogger(ctx).WarnContext(ctx, "object table func not registered", "gvk", gvk.String())
 
 	r.Body = io.NopCloser(bytes.NewBuffer(b))
 	return nil

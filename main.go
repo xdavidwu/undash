@@ -300,11 +300,14 @@ func listHandlerFor(gvr schema.GroupVersionResource) http.Handler {
 			if toTable, ok := kubernetes.UnstructuredListToTableFuncs[gvk]; ok {
 				table, err := toTable(res)
 				if err != nil {
-					return nil, fmt.Errorf("cannot convert list to table: %w", err)
+					if !kubernetes.IsTableUnsupported(err) {
+						return nil, fmt.Errorf("cannot convert list to table: %w", err)
+					}
+					undashctx.GetLogger(ctx).WarnContext(ctx, "list table func unsupported", "gvk", gvk.String())
+				} else {
+					w.Header().Set("Content-Type", undashhttp.MetaV1TableJSON.String())
+					return table, nil
 				}
-
-				w.Header().Set("Content-Type", undashhttp.MetaV1TableJSON.String())
-				return table, nil
 			} else {
 				undashctx.GetLogger(ctx).WarnContext(ctx, "list table func not registered", "gvk", gvk.String())
 			}

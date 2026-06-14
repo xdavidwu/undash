@@ -19,6 +19,7 @@ func init() {
 	internalprinters.AddHandlers(printer)
 }
 
+// TODO consider NewDefaultTableConvertor
 func ToTableFunc[
 	APIType runtime.Object,
 	InternalTypeStruct any,
