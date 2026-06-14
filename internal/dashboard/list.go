@@ -6,7 +6,8 @@ import (
 )
 
 type ObjectMeta struct {
-	Name string `json:"name"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
 }
 
 // Implements [json.Unmarshaler], to be passed to e.g. [json.Unmarshal],

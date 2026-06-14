@@ -208,19 +208,21 @@ var (
 	}
 )
 
-func namespacedListHandlerFor(gvr schema.GroupVersionResource) http.Handler {
+func listHandlerFor(gvr schema.GroupVersionResource) http.Handler {
 	return undashhttp.JSONHandler(func(w http.ResponseWriter, r *http.Request) (runtime.Object, error) {
 		ns := r.PathValue("namespace")
 		meta := verberMappedResources[gvr]
 		client := undashhttp.NewDefaultClient()
 		ctx := r.Context()
 
-		listRes, err := client.Call(
-			ctx,
-			http.MethodGet,
-			fmt.Sprintf("%s/api/v1/%s/%s", upstream, meta.singular, ns),
-			nil,
-		)
+		path := ""
+		if ns != "" {
+			path = fmt.Sprintf("%s/api/v1/%s/%s", upstream, meta.singular, ns)
+		} else {
+			path = fmt.Sprintf("%s/api/v1/%s", upstream, meta.singular)
+		}
+
+		listRes, err := client.Call(ctx, http.MethodGet, path, nil)
 		if err != nil {
 			return nil, fmt.Errorf("cannot list objects: %w", err)
 		}
@@ -245,12 +247,14 @@ func namespacedListHandlerFor(gvr schema.GroupVersionResource) http.Handler {
 		res.SetAPIVersion("v1")
 		res.SetKind(meta.listKind)
 		for _, obj := range listObj.ObjectMetas {
-			realObjRes, err := client.Call(
-				ctx,
-				http.MethodGet,
-				fmt.Sprintf("%s/api/v1/_raw/%s/namespace/%s/name/%s", upstream, meta.singular, ns, obj.Name),
-				nil,
-			)
+			path := ""
+			if obj.Namespace != "" {
+				path = fmt.Sprintf("%s/api/v1/_raw/%s/namespace/%s/name/%s", upstream, meta.singular, obj.Namespace, obj.Name)
+			} else {
+				path = fmt.Sprintf("%s/api/v1/_raw/%s/name/%s", upstream, meta.singular, obj.Name)
+			}
+
+			realObjRes, err := client.Call(ctx, http.MethodGet, path, nil)
 			// TODO fight with MSG_DASHBOARD_EXCLUSIVE_RESOURCE_ERROR?
 			if err != nil {
 				return nil, fmt.Errorf("cannot get real object: %w", err)
@@ -371,6 +375,13 @@ func main() {
 	// TODO advertise these at discovery
 	for gvr, meta := range verberMappedResources {
 		prefix := apiPrefix(gvr.GroupVersion())
+		if meta.listKind != "" {
+			mux.Handle(
+				"GET "+prefix+"/"+gvr.Resource,
+				listHandlerFor(gvr),
+			)
+		}
+
 		if meta.namespaced {
 			mux.Handle(
 				prefix+"/namespaces/{namespace}/"+gvr.Resource+"/{name}",
@@ -400,7 +411,7 @@ func main() {
 			if meta.listKind != "" {
 				mux.Handle(
 					"GET "+prefix+"/namespaces/{namespace}/"+gvr.Resource,
-					namespacedListHandlerFor(gvr),
+					listHandlerFor(gvr),
 				)
 			}
 		} else {
